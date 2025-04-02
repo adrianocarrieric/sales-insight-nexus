@@ -124,7 +124,7 @@ const DateSelector: React.FC<DateSelectorProps> = ({ dateRange, setDateRange, ve
               onChange={handleRangeChange}
               moveRangeOnFirstSelection={false}
               ranges={dateRange as Range[]}
-              editableDateInputs
+              editableDateInputs={true}
               dateDisplayFormat="dd/MM/yyyy"
               maxDate={new Date()}
               className="border rounded shadow-sm"
