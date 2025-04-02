@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { DateRange, DefinedRange } from 'react-date-range';
+import { DateRange as DateRangeComponent, DefinedRange, Range, RangeKeyDict } from 'react-date-range';
 import dayjs from 'dayjs';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CalendarIcon } from 'lucide-react';
+import { Venta } from '../hooks/useSalesData';
 
 interface DateSelectorProps {
   dateRange: {
@@ -19,7 +20,7 @@ interface DateSelectorProps {
     endDate: Date;
     key: string;
   }[]>>;
-  ventas: any[];
+  ventas: Venta[];
 }
 
 const DateSelector: React.FC<DateSelectorProps> = ({ dateRange, setDateRange, ventas }) => {
@@ -62,7 +63,7 @@ const DateSelector: React.FC<DateSelectorProps> = ({ dateRange, setDateRange, ve
       label: 'Siempre',
       range: () => {
         if (ventas.length === 0) return { startDate: new Date(), endDate: new Date() };
-        const fechas = ventas.map(v => dayjs(v.Fecha)).filter(d => d.isValid());
+        const fechas = ventas.map(v => dayjs(v.Fecha)).filter(d => d && d.isValid());
         
         if (fechas.length === 0) return { startDate: new Date(), endDate: new Date() };
         
@@ -88,6 +89,17 @@ const DateSelector: React.FC<DateSelectorProps> = ({ dateRange, setDateRange, ve
     }
   }, [ventas, setDateRange]);
 
+  const handleRangeChange = (ranges: RangeKeyDict) => {
+    // Make sure we match our expected format with mandatory properties
+    if (ranges.selection) {
+      setDateRange([{
+        startDate: ranges.selection.startDate || new Date(),
+        endDate: ranges.selection.endDate || new Date(),
+        key: 'selection'
+      }]);
+    }
+  };
+
   return (
     <div className="date-selector space-y-4">
       <div className="flex items-center gap-2">
@@ -108,21 +120,20 @@ const DateSelector: React.FC<DateSelectorProps> = ({ dateRange, setDateRange, ve
       {showCalendar && (
         <Card className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
-            <DateRange
-              onChange={(ranges) => setDateRange([ranges.selection])}
+            <DateRangeComponent
+              onChange={handleRangeChange}
               moveRangeOnFirstSelection={false}
-              ranges={dateRange}
+              ranges={dateRange as Range[]}
               editableDateInputs
               dateDisplayFormat="dd/MM/yyyy"
               maxDate={new Date()}
               className="border rounded shadow-sm"
             />
             <DefinedRange
-              onChange={(ranges) => setDateRange([ranges.selection])}
+              onChange={handleRangeChange}
               staticRanges={staticRanges}
               inputRanges={[]}
-              ranges={dateRange}
-              maxDate={new Date()}
+              ranges={dateRange as Range[]}
             />
           </div>
         </Card>
