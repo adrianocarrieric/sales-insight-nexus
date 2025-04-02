@@ -31,10 +31,9 @@ const Filters: React.FC<FiltersProps> = ({
   setMetricasVisibles
 }) => {
   const toggleMetrica = (key: string) => {
-    setMetricasVisibles(prev => 
-      prev.includes(key)
-        ? prev.filter(k => k !== key)
-        : [...prev, key]
+    setMetricasVisibles(metricasVisibles.includes(key)
+      ? metricasVisibles.filter(k => k !== key)
+      : [...metricasVisibles, key]
     );
   };
 

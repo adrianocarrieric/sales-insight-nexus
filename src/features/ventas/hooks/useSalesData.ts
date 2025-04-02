@@ -5,6 +5,16 @@ import { parseCSVData } from "../utils/csvUtils";
 import { generateChartData } from "../utils/chartUtils";
 import { toast } from "@/components/ui/use-toast";
 
+// Define global window for Electron API
+declare global {
+  interface Window {
+    electronAPI?: {
+      getFilePath: (defaultName: string) => string;
+      readFile: (path: string) => Promise<string>;
+    };
+  }
+}
+
 // Verificar si estamos en un entorno Electron
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
