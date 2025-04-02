@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import dayjs from "dayjs";
 import { parseCSVData } from "../utils/csvUtils";
@@ -114,18 +113,78 @@ export function useSalesData() {
           cargarDatosMock();
         });
     } else {
-      fetch("/data_inicial.csv")
+      // Intentamos cargar el archivo CSV desde la carpeta public
+      fetch("/data_inicial.csv", {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Cache-Control': 'no-cache',
+        }
+      })
         .then(res => {
-          if (!res.ok) throw new Error("No se encontró el archivo CSV");
+          if (!res.ok) {
+            throw new Error(`No se encontró el archivo CSV: ${res.status}`);
+          }
           return res.text();
         })
-        .then(text => procesarCSV(parseCSVData(text)))
+        .then(text => {
+          if (text.trim().startsWith('<!DOCTYPE html>') || text.includes('<html')) {
+            throw new Error("El servidor devolvió HTML en lugar de CSV");
+          }
+          const parsedData = parseCSVData(text);
+          procesarCSV(parsedData);
+        })
         .catch(err => {
           console.error("Error al cargar CSV:", err);
           cargarDatosMock();
         });
     }
   }, []);
+
+  // Función para generar datos de ejemplo
+  function generarDatosEjemplo(): Venta[] {
+    const hoy = new Date();
+    const datosEjemplo: Venta[] = [];
+    
+    // Crear algunas categorías para simular datos
+    const categoriasEjemplo = ["Electrónica", "Ropa", "Alimentos", "Hogar"];
+    const productosEjemplo = {
+      "Electrónica": ["Smartphone", "Laptop", "Tablet", "TV"],
+      "Ropa": ["Camiseta", "Pantalón", "Vestido", "Zapatos"],
+      "Alimentos": ["Frutas", "Lácteos", "Carnes", "Verduras"],
+      "Hogar": ["Sillón", "Mesa", "Lámpara", "Cama"]
+    };
+    
+    // Generar datos para los últimos 6 meses
+    for (let i = 0; i < 180; i++) {
+      const fecha = new Date(hoy);
+      fecha.setDate(fecha.getDate() - i);
+      
+      // Entre 1 y 5 ventas por día para cada categoría
+      categoriasEjemplo.forEach(categoria => {
+        const numVentas = Math.floor(Math.random() * 5) + 1;
+        
+        for (let j = 0; j < numVentas; j++) {
+          const productos = productosEjemplo[categoria as keyof typeof productosEjemplo];
+          const producto = productos[Math.floor(Math.random() * productos.length)];
+          const cantidad = Math.floor(Math.random() * 5) + 1;
+          const valorUnitario = Math.floor(Math.random() * 1000) + 100;
+          
+          datosEjemplo.push({
+            Fecha: fecha,
+            NumeroRecibo: `REC-${Math.floor(Math.random() * 10000)}`,
+            TipoRecibo: "Venta",
+            Categoria: categoria,
+            REF: `REF-${Math.floor(Math.random() * 1000)}`,
+            Articulo: producto,
+            Cantidad: cantidad,
+            VentasNetas: cantidad * valorUnitario
+          });
+        }
+      });
+    }
+    
+    return datosEjemplo;
+  }
 
   function procesarCSV(parsedData: Venta[]) {
     if (!parsedData || parsedData.length === 0) {
