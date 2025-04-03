@@ -1,3 +1,4 @@
+
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import minMax from 'dayjs/plugin/minMax';
@@ -44,6 +45,10 @@ const INFLACION_MENSUAL: Record<string, number> = {
   "2026-01": 1.5, "2026-02": 1.5, "2026-03": 1.5
 };
 
+// Constantes para los cálculos de proyección
+const CRECIMIENTO_POR_DEFECTO = 1.1;
+const CRECIMIENTO_MAXIMO = 1.3;
+
 /**
  * Ajusta un valor por la inflación acumulada entre dos fechas
  */
@@ -69,22 +74,21 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
  * Agrupa ventas por período de tiempo (día, semana, mes)
  */
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
-  console.log("Ventas filtradas:", ventasFiltradas.length);
-  const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount?: number }> = {};
+  const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> = {};
+
+  // Contadores para diagnóstico
+  let recibosValidos = 0;
+  let recibosInvalidos = 0;
+  let ventasSinFecha = 0;
 
   console.log("Datos que llegan a agruparVentasPorTiempo:", ventasFiltradas.slice(0, 5));
 
   ventasFiltradas.forEach(v => {
-    if (!v.Fecha) return;
-    console.log("Procesando venta:", {
-      fecha: v.Fecha,
-      numeroRecibo: v["Número de recibo"],
-      tipoRecibo: v["Tipo de recibo"],
-      ventasNetas: v.VentasNetas,
-      categoria: v.Categoria,
-      datosCompletos: v
-    });
-
+    if (!v.Fecha) {
+      ventasSinFecha++;
+      return; // Omitir ventas sin fecha
+    }
+    
     let label: string;
     if (agrupacion === "Mensual") {
       label = dayjs(v.Fecha).format("YYYY-MM");
@@ -95,42 +99,34 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     }
 
     if (!result[label]) {
-      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0 };
+      result[label] = { articulos: 0, recibos: new Set<string>(), ventasNetas: 0, recibosCount: 0 };
     }
 
     result[label].articulos += v.Cantidad || 0;
     result[label].ventasNetas += v.VentasNetas || 0;
 
-    // Solo agregamos el recibo si no es reembolso y tiene número válido
-    const numeroRecibo = v["Número de recibo"];
-    const tipoRecibo = v["Tipo de recibo"];
-    
-    console.log("Procesando recibo:", {
-      numero: numeroRecibo,
-      tipo: tipoRecibo,
-      fecha: v.Fecha,
-      label: label
-    });
-
-    if (tipoRecibo !== "Reembolso" && numeroRecibo && numeroRecibo.trim() !== '') {
-      const reciboLimpio = numeroRecibo.trim();
-      result[label].recibos.add(reciboLimpio);
-      console.log(`✅ Agregando recibo ${reciboLimpio} a ${label}`);
+    // Verificación estricta para recibos válidos
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
+      result[label].recibos.add(v.NumeroRecibo);
+      recibosValidos++;
     } else {
-      console.log(`❌ Recibo no válido o es reembolso:`, {
-        esReembolso: tipoRecibo === "Reembolso",
-        numeroVacio: !numeroRecibo
-      });
+      recibosInvalidos++;
     }
   });
 
-  // Calcular recibosCount una sola vez usando el Set de recibos únicos
+  // Diagnóstico
+  console.log(`🔍 Agrupación: recibos válidos=${recibosValidos}, inválidos=${recibosInvalidos}, ventas sin fecha=${ventasSinFecha}`);
+  console.log(`📆 Períodos generados: ${Object.keys(result).length}`);
+
+  // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
-    console.log(`${lbl}: ${result[lbl].recibosCount} recibos únicos`);
+    if (result[lbl].recibosCount > 0) {
+      console.log(`📅 ${lbl}: ${result[lbl].recibosCount} recibos`);
+    }
   });
 
-  return result as Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }>;
+  return result;
 }
 
 /**
@@ -217,6 +213,25 @@ function generarProyeccionBase(agrupadas: Record<string, any>, clave: string, ag
 }
 
 /**
+ * Calcula el valor base para proyecciones
+ */
+function calcularValorBase(datosPorClave: Record<string | number, Record<number, number>>, 
+                          periodo: string | number, 
+                          año: number, 
+                          tendencia: Record<string, number> = {}): number | null {
+  const base = datosPorClave[periodo]?.[año - 1];
+  const anterior2 = datosPorClave[periodo]?.[año - 2];
+  
+  if (base != null) {
+    const tasa = (tendencia[periodo as string]) || CRECIMIENTO_POR_DEFECTO;
+    const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : tasa;
+    return base * ratio;
+  }
+  
+  return null;
+}
+
+/**
  * Genera datos para el gráfico de acuerdo a los filtros
  */
 export function generateChartData(
@@ -231,6 +246,18 @@ export function generateChartData(
 ) {
   if (!ventas || ventas.length === 0) 
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
+
+  // Diagnóstico inicial
+  console.log(`📊 generateChartData: recibido ${ventas.length} ventas`);
+  
+  // Verificar recibos únicos en todo el conjunto de datos
+  const todosRecibos = new Set<string>();
+  ventas.forEach(v => {
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+      todosRecibos.add(v.NumeroRecibo);
+    }
+  });
+  console.log(`🧾 Total de recibos únicos en todo el dataset: ${todosRecibos.size}`);
 
   let yearChangeLines = [];
 
@@ -266,12 +293,23 @@ export function generateChartData(
 
   // Filtrar ventas históricas y en rango
   const ventasHistoricas = ventas.filter(v => v.Fecha && dayjs(v.Fecha).isValid());
+  console.log(`🔍 Ventas con fechas válidas: ${ventasHistoricas.length} de ${ventas.length}`);
 
   const ventasEnRango = ventasHistoricas.filter(v => {
     if (!v.Fecha) return false;
     const fv = dayjs(v.Fecha);
     return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
   });
+  console.log(`🔍 Ventas en rango: ${ventasEnRango.length} de ${ventasHistoricas.length}`);
+
+  // Contar recibos únicos en el rango
+  const recibosEnRango = new Set<string>();
+  ventasEnRango.forEach(v => {
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
+      recibosEnRango.add(v.NumeroRecibo);
+    }
+  });
+  console.log(`🧾 Recibos únicos en rango: ${recibosEnRango.size}`);
 
   // Arreglo para almacenar los datasets del gráfico
   let datasets = [];
@@ -282,6 +320,16 @@ export function generateChartData(
       (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
       (productoParam === "Todos los productos" || v.Articulo === productoParam)
     );
+    console.log(`🔍 Ventas filtradas por categoría/producto: ${ventasFiltradas.length} de ${ventasEnRango.length}`);
+
+    // Verificar recibos únicos después del filtrado
+    const recibosUnicos = new Set<string>();
+    ventasFiltradas.forEach(v => {
+      if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
+        recibosUnicos.add(v.NumeroRecibo);
+      }
+    });
+    console.log(`🧾 Recibos únicos después de filtrar: ${recibosUnicos.size}`);
 
     // Agrupar datos para mostrar en el gráfico
     const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
@@ -305,13 +353,24 @@ export function generateChartData(
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
-
-      const data = timeLabels.map(lbl => agrupadas[lbl]?.[met.key] || 0);
-
+      
+      // Ajuste para asegurar compatibilidad con las claves para articulos
+      const metricaKey = met.key === "articulos" ? "articulos" : met.key;
+      
+      const data = timeLabels.map(lbl => {
+        const valor = agrupadas[lbl]?.[metricaKey] || 0;
+        return valor;
+      });
+      
+      // Diagnóstico para recibosCount
+      if (metricaKey === "recibosCount") {
+        console.log(`🧾 Dataset recibosCount generado con ${data.filter(v => v > 0).length} valores positivos de ${data.length}`);
+      }
+      
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
-        backgroundColor: coloresFijos[met.key as keyof typeof coloresFijos] || obtenerColor(0),
+        backgroundColor: coloresFijos[metricaKey as keyof typeof coloresFijos] || obtenerColor(0),
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
@@ -345,16 +404,13 @@ export function generateChartData(
             const anterior2 = datosPorClave[periodo]?.[año - 2];
 
             if (base != null) {
-              const ratio = anterior2 != null ? Math.min(base / anterior2, 1.3) : 1.1; // 10% de crecimiento si no hay anterior2
+              const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO;
               valor = base * ratio;
               const desde = dayjs().year(año - 1).month(date.month());
               valor = ajustarPorInflacion(date, valor, desde);
             }
           } else {
-            const base = datosPorClave[periodo]?.[año - 1];
-            const anterior2 = datosPorClave[periodo]?.[año - 2];
-            const ratio = anterior2 != null ? (tendencia[periodo] || 1) : 1.1; // 10% por defecto
-            valor = base != null ? base * ratio : null;
+            valor = calcularValorBase(datosPorClave, periodo, año, tendencia);
           }
 
           if (valor != null) {
@@ -519,3 +575,12 @@ export function generateChartData(
     }
   };
 }
+
+export {
+  obtenerColor,
+  agruparVentasPorTiempo,
+  calcularMediaMovil,
+  parseIsoWeekLabel,
+  tendenciaPorSemana,
+  calcularValorBase
+};
