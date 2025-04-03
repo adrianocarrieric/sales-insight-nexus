@@ -248,7 +248,7 @@ function calcularValorBase(datosPorClave: Record<string | number, Record<number,
 /**
  * Genera datos para el gráfico de acuerdo a los filtros
  */
-export function generateChartData(
+function generateChartData(
   ventas: Venta[],
   categoriaParam: string,
   productoParam: string,
