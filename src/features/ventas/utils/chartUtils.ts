@@ -1,4 +1,3 @@
-
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import minMax from 'dayjs/plugin/minMax';
@@ -76,7 +75,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) return;
     console.log("Procesando venta:", { fecha: v.Fecha, recibo: v.NumeroRecibo, tipo: v.TipoRecibo });
-    
+
     let label: string;
     if (agrupacion === "Mensual") {
       label = dayjs(v.Fecha).format("YYYY-MM");
@@ -93,22 +92,19 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     result[label].articulos += v.Cantidad || 0;
     result[label].ventasNetas += v.VentasNetas || 0;
 
-    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
-      if (v.TipoRecibo !== "Reembolso") {
-        const reciboLimpio = v.NumeroRecibo.trim();
-        result[label].recibos.add(reciboLimpio);
-        console.log(`Agregando recibo ${reciboLimpio} a ${label}`);
-      }
+    // Solo agregamos el recibo si no es reembolso y tiene número válido
+    if (v.TipoRecibo !== "Reembolso" && v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+      // Limpiamos el número de recibo de espacios
+      const reciboLimpio = v.NumeroRecibo.trim();
+      result[label].recibos.add(reciboLimpio);
+      console.log(`Agregando recibo ${reciboLimpio} a ${label}`);
     }
   });
 
-  // Calcular recibosCount a partir del Set de recibos
+  // Calcular recibosCount una sola vez usando el Set de recibos únicos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
-    console.log(`${lbl}: ${result[lbl].recibosCount} recibos`);
-  });
-  Object.keys(result).forEach(lbl => {
-    result[lbl].recibosCount = result[lbl].recibos.size;
+    console.log(`${lbl}: ${result[lbl].recibosCount} recibos únicos`);
   });
 
   return result as Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }>;
@@ -171,7 +167,7 @@ function tendenciaPorSemana(datosPorSemana: Record<string, Record<number, number
  */
 function generarProyeccionBase(agrupadas: Record<string, any>, clave: string, agrupacion: string): Record<string | number, Record<number, number>> {
   const datosPorClave: Record<string | number, Record<number, number>> = {};
-  
+
   for (let lbl in agrupadas) {
     let periodo: string | number;
     if (agrupacion === "Semanal" && lbl.includes("-W")) {
@@ -193,7 +189,7 @@ function generarProyeccionBase(agrupadas: Record<string, any>, clave: string, ag
       datosPorClave[periodo][year] = agrupadas[lbl][clave] || 0;
     }
   }
-  
+
   return datosPorClave;
 }
 
@@ -219,14 +215,14 @@ export function generateChartData(
   const { startDate, endDate } = dateRange[0];
   const start = dayjs(startDate);
   const end = dayjs(endDate);
-  
+
   // Generar etiquetas de tiempo para el rango de fechas
   const baseTimeLabels = agrupacion === "Mensual"
     ? generarMesesGlobales(start, end)
     : agrupacion === "Semanal"
       ? generarSemanasGlobales(start, end)
       : generarDiasGlobales(start, end);
-  
+
   let endExtendido = end;
   let timeLabels = baseTimeLabels;
 
@@ -286,9 +282,9 @@ export function generateChartData(
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
-      
+
       const data = timeLabels.map(lbl => agrupadas[lbl]?.[met.key] || 0);
-      
+
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
@@ -301,7 +297,7 @@ export function generateChartData(
     // Agregar proyecciones si están habilitadas
     if (metricasVisibles.includes("proyeccion")) {
       const clavesProyectadas = metricasVisibles.filter(m => m !== "proyeccion");
-      
+
       clavesProyectadas.forEach((clave) => {
         const datosPorClave = generarProyeccionBase(agrupadasHistorialCompleto, clave, agrupacion);
         const tendencia = tendenciaPorSemana(datosPorClave);
@@ -318,7 +314,7 @@ export function generateChartData(
               ? date.month() + 1
               : date.dayOfYear();
           const año = date.year();
-          
+
           let valor: number | null = null;
 
           if (clave === "ventasNetas") {
@@ -346,7 +342,7 @@ export function generateChartData(
 
         // Suavizar proyección con media móvil
         const proyeccionSuavizada = calcularMediaMovil(proyeccionData, 3).map(v => v != null ? Math.round(v) : null);
-        
+
         // Encontrar el punto donde comienza la proyección
         const ultimoLabelReal = baseTimeLabels[baseTimeLabels.length - 1];
         const inicioProyeccionIndex = allLabels.findIndex(lbl => lbl === ultimoLabelReal) + 1;
