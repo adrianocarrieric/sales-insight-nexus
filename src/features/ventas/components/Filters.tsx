@@ -31,14 +31,15 @@ const Filters: React.FC<FiltersProps> = ({
   setMetricasVisibles
 }) => {
   const toggleMetrica = (key: string) => {
-    if (key === "recibosCount" && metricasVisibles.length === 1 && metricasVisibles.includes("recibosCount")) {
-      return; // No permitir deseleccionar el último checkbox
-    }
-    setMetricasVisibles(prev => 
-      prev.includes(key) 
+    setMetricasVisibles(prev => {
+      const isSelected = prev.includes(key);
+      const result = isSelected 
         ? prev.filter(k => k !== key)
-        : [...prev, key]
-    );
+        : [...prev, key];
+      
+      // Mantener al menos una métrica seleccionada
+      return result.length > 0 ? result : prev;
+    });
   };
 
   return (

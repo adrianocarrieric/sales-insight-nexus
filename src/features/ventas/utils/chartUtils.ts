@@ -90,7 +90,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
 
     console.log("Procesando venta:", {
       fecha: v.Fecha,
-      ventasNetas: parseFloat(v.VentasNetas) || 0,
+      ventasNetas: parseFloat(v["Ventas netas"]) || 0,
       categoria: v.Categoria,
       datosCompletos: v
     });
@@ -113,7 +113,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     }
 
     result[label].articulos += v.Cantidad || 0;
-    result[label].ventasNetas += v.VentasNetas || 0;
+    result[label].ventasNetas += parseFloat(v["Ventas netas"]) || 0;
 
     // Verificación estricta para recibos válidos
     if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
