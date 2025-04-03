@@ -81,7 +81,8 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       numeroRecibo: v["Número de recibo"],
       tipoRecibo: v["Tipo de recibo"],
       ventasNetas: v.VentasNetas,
-      categoria: v.Categoria
+      categoria: v.Categoria,
+      datosCompletos: v
     });
 
     let label: string;
