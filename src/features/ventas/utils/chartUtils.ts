@@ -71,6 +71,9 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
  */
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
   const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount?: number }> = {};
+  
+  // Primero agrupar por número de recibo para sumar los valores
+  const recibosPorPeriodo: Record<string, Record<string, { cantidad: number, ventasNetas: number }>> = {};
 
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) return;
@@ -84,16 +87,31 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       label = dayjs(v.Fecha).format("YYYY-MM-DD");
     }
 
-    if (!result[label]) {
-      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0 };
+    if (!recibosPorPeriodo[label]) {
+      recibosPorPeriodo[label] = {};
     }
 
-    result[label].articulos += v.Cantidad || 0;
-    result[label].ventasNetas += v.VentasNetas || 0;
-
-    if (v.TipoRecibo !== "Reembolso") {
-      result[label].recibos.add(v.NumeroRecibo);
+    if (!recibosPorPeriodo[label][v.NumeroRecibo]) {
+      recibosPorPeriodo[label][v.NumeroRecibo] = { cantidad: 0, ventasNetas: 0 };
     }
+
+    recibosPorPeriodo[label][v.NumeroRecibo].cantidad += v.Cantidad || 0;
+    recibosPorPeriodo[label][v.NumeroRecibo].ventasNetas += v.VentasNetas || 0;
+  });
+
+  // Luego agregar los totales al resultado final
+  Object.entries(recibosPorPeriodo).forEach(([label, recibos]) => {
+    result[label] = { 
+      articulos: 0, 
+      recibos: new Set(Object.keys(recibos)), 
+      ventasNetas: 0,
+      recibosCount: 0 
+    };
+
+    Object.entries(recibos).forEach(([numRecibo, valores]) => {
+      result[label].articulos += valores.cantidad;
+      result[label].ventasNetas += valores.ventasNetas;
+    });
   });
 
   // Calcular recibosCount a partir del Set de recibos
