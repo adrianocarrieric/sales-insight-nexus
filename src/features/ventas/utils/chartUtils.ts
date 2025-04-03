@@ -76,8 +76,16 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
   const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> = {};
 
+  // Contadores para diagnóstico
+  let recibosValidos = 0;
+  let recibosInvalidos = 0;
+  let ventasSinFecha = 0;
+
   ventasFiltradas.forEach(v => {
-    if (!v.Fecha) return;
+    if (!v.Fecha) {
+      ventasSinFecha++;
+      return; // Omitir ventas sin fecha
+    }
     
     let label: string;
     if (agrupacion === "Mensual") {
@@ -89,20 +97,31 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     }
 
     if (!result[label]) {
-      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0, recibosCount: 0 };
+      result[label] = { articulos: 0, recibos: new Set<string>(), ventasNetas: 0, recibosCount: 0 };
     }
 
     result[label].articulos += v.Cantidad || 0;
     result[label].ventasNetas += v.VentasNetas || 0;
 
+    // Verificación estricta para recibos válidos
     if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
       result[label].recibos.add(v.NumeroRecibo);
+      recibosValidos++;
+    } else {
+      recibosInvalidos++;
     }
   });
+
+  // Diagnóstico
+  console.log(`🔍 Agrupación: recibos válidos=${recibosValidos}, inválidos=${recibosInvalidos}, ventas sin fecha=${ventasSinFecha}`);
+  console.log(`📆 Períodos generados: ${Object.keys(result).length}`);
 
   // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
+    if (result[lbl].recibosCount > 0) {
+      console.log(`📅 ${lbl}: ${result[lbl].recibosCount} recibos`);
+    }
   });
 
   return result;
@@ -226,6 +245,18 @@ export function generateChartData(
   if (!ventas || ventas.length === 0) 
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
 
+  // Diagnóstico inicial
+  console.log(`📊 generateChartData: recibido ${ventas.length} ventas`);
+  
+  // Verificar recibos únicos en todo el conjunto de datos
+  const todosRecibos = new Set<string>();
+  ventas.forEach(v => {
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+      todosRecibos.add(v.NumeroRecibo);
+    }
+  });
+  console.log(`🧾 Total de recibos únicos en todo el dataset: ${todosRecibos.size}`);
+
   let yearChangeLines = [];
 
   const individualMode = !Array.isArray(categoriaParam);
@@ -260,12 +291,23 @@ export function generateChartData(
 
   // Filtrar ventas históricas y en rango
   const ventasHistoricas = ventas.filter(v => v.Fecha && dayjs(v.Fecha).isValid());
+  console.log(`🔍 Ventas con fechas válidas: ${ventasHistoricas.length} de ${ventas.length}`);
 
   const ventasEnRango = ventasHistoricas.filter(v => {
     if (!v.Fecha) return false;
     const fv = dayjs(v.Fecha);
     return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
   });
+  console.log(`🔍 Ventas en rango: ${ventasEnRango.length} de ${ventasHistoricas.length}`);
+
+  // Contar recibos únicos en el rango
+  const recibosEnRango = new Set<string>();
+  ventasEnRango.forEach(v => {
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
+      recibosEnRango.add(v.NumeroRecibo);
+    }
+  });
+  console.log(`🧾 Recibos únicos en rango: ${recibosEnRango.size}`);
 
   // Arreglo para almacenar los datasets del gráfico
   let datasets = [];
@@ -276,6 +318,16 @@ export function generateChartData(
       (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
       (productoParam === "Todos los productos" || v.Articulo === productoParam)
     );
+    console.log(`🔍 Ventas filtradas por categoría/producto: ${ventasFiltradas.length} de ${ventasEnRango.length}`);
+
+    // Verificar recibos únicos después del filtrado
+    const recibosUnicos = new Set<string>();
+    ventasFiltradas.forEach(v => {
+      if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
+        recibosUnicos.add(v.NumeroRecibo);
+      }
+    });
+    console.log(`🧾 Recibos únicos después de filtrar: ${recibosUnicos.size}`);
 
     // Agrupar datos para mostrar en el gráfico
     const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
@@ -300,12 +352,23 @@ export function generateChartData(
     METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
       
-      const data = timeLabels.map(lbl => agrupadas[lbl]?.[met.key] || 0);
+      // Ajuste para asegurar compatibilidad con las claves para articulos
+      const metricaKey = met.key === "articulos" ? "articulos" : met.key;
+      
+      const data = timeLabels.map(lbl => {
+        const valor = agrupadas[lbl]?.[metricaKey] || 0;
+        return valor;
+      });
+      
+      // Diagnóstico para recibosCount
+      if (metricaKey === "recibosCount") {
+        console.log(`🧾 Dataset recibosCount generado con ${data.filter(v => v > 0).length} valores positivos de ${data.length}`);
+      }
       
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
-        backgroundColor: coloresFijos[met.key as keyof typeof coloresFijos] || obtenerColor(0),
+        backgroundColor: coloresFijos[metricaKey as keyof typeof coloresFijos] || obtenerColor(0),
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
