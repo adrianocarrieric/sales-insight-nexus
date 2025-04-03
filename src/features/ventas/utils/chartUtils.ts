@@ -44,10 +44,6 @@ const INFLACION_MENSUAL: Record<string, number> = {
   "2026-01": 1.5, "2026-02": 1.5, "2026-03": 1.5
 };
 
-// Constantes para los cálculos de proyección
-const CRECIMIENTO_POR_DEFECTO = 1.1;
-const CRECIMIENTO_MAXIMO = 1.3;
-
 /**
  * Ajusta un valor por la inflación acumulada entre dos fechas
  */
@@ -80,30 +76,17 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
   let recibosInvalidos = 0;
   let ventasSinFecha = 0;
 
-  console.log("Datos que llegan a agruparVentasPorTiempo:", ventasFiltradas.slice(0, 5));
-
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) {
       ventasSinFecha++;
       return; // Omitir ventas sin fecha
     }
 
-    console.log("Procesando venta:", {
-      fecha: v.Fecha,
-      ventasNetas: parseFloat(v.VentasNetas) || 0,
-      categoria: v.Categoria,
-      datosCompletos: v
-    });
-
     let label: string;
     if (agrupacion === "Mensual") {
       label = dayjs(v.Fecha).format("YYYY-MM");
     } else if (agrupacion === "Semanal") {
       label = formatIsoWeekKey(v.Fecha);
-      console.log("Procesando recibo:", {
-        fecha: v.Fecha,
-        label
-      });
     } else {
       label = dayjs(v.Fecha).format("YYYY-MM-DD");
     }
@@ -121,23 +104,12 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       recibosValidos++;
     } else {
       recibosInvalidos++;
-      console.log("❌ Recibo no válido o es reembolso:", {
-        esReembolso: v.TipoRecibo === "Reembolso",
-        numeroVacio: !v.NumeroRecibo || v.NumeroRecibo.trim() === ''
-      });
     }
   });
-
-  // Diagnóstico
-  console.log(`🔍 Agrupación: recibos válidos=${recibosValidos}, inválidos=${recibosInvalidos}, ventas sin fecha=${ventasSinFecha}`);
-  console.log(`📆 Períodos generados: ${Object.keys(result).length}`);
 
   // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
-    if (result[lbl].recibosCount > 0) {
-      console.log(`📅 ${lbl}: ${result[lbl].recibosCount} recibos`);
-    }
   });
 
   return result;
@@ -237,8 +209,8 @@ function calcularValorBase(datosPorClave: Record<string | number, Record<number,
   const anterior2 = datosPorClave[periodo]?.[año - 2];
 
   if (base != null) {
-    const tasa = (tendencia[periodo as string]) || CRECIMIENTO_POR_DEFECTO;
-    const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : tasa;
+    const tasa = (tendencia[periodo as string]) || 1.1;
+    const ratio = anterior2 != null ? Math.min(base / anterior2, 1.3) : tasa;
     return base * ratio;
   }
 
@@ -261,26 +233,10 @@ function generateChartData(
   if (!ventas || ventas.length === 0)
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
 
-  // Diagnóstico inicial
-  console.log(`📊 generateChartData: recibido ${ventas.length} ventas`);
-
-  // Verificar recibos únicos en todo el conjunto de datos
-  const todosRecibos = new Set<string>();
-  ventas.forEach(v => {
-    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
-      todosRecibos.add(v.NumeroRecibo);
-    }
-  });
-  console.log(`🧾 Total de recibos únicos en todo el dataset: ${todosRecibos.size}`);
-
-  let yearChangeLines = [];
-
-  const individualMode = !Array.isArray(categoriaParam);
   const { startDate, endDate } = dateRange[0];
   const start = dayjs(startDate);
   const end = dayjs(endDate);
 
-  // Generar etiquetas de tiempo para el rango de fechas
   const baseTimeLabels = agrupacion === "Mensual"
     ? generarMesesGlobales(start, end)
     : agrupacion === "Semanal"
@@ -290,7 +246,6 @@ function generateChartData(
   let endExtendido = end;
   let timeLabels = baseTimeLabels;
 
-  // Extender el rango si se incluye proyección
   if (metricasVisibles.includes("proyeccion")) {
     endExtendido = agrupacion === "Semanal"
       ? end.add(52, "week")
@@ -305,70 +260,26 @@ function generateChartData(
         : generarDiasGlobales(start, endExtendido);
   }
 
-  // Filtrar ventas históricas y en rango
   const ventasHistoricas = ventas.filter(v => v.Fecha && dayjs(v.Fecha).isValid());
-  console.log(`🔍 Ventas con fechas válidas: ${ventasHistoricas.length} de ${ventas.length}`);
-
   const ventasEnRango = ventasHistoricas.filter(v => {
     if (!v.Fecha) return false;
     const fv = dayjs(v.Fecha);
     return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
   });
-  console.log(`🔍 Ventas en rango: ${ventasEnRango.length} de ${ventasHistoricas.length}`);
 
-  // Contar recibos únicos en el rango
-  const recibosEnRango = new Set<string>();
-  ventasEnRango.forEach(v => {
-    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
-      recibosEnRango.add(v.NumeroRecibo);
-    }
-  });
-  console.log(`🧾 Recibos únicos en rango: ${recibosEnRango.size}`);
-
-  // Arreglo para almacenar los datasets del gráfico
   let datasets = [];
 
-  if (individualMode) {
-    // Filtrar ventas según categoría y producto seleccionados
+  if (!Array.isArray(categoriaParam)) {
     const ventasFiltradas = ventasEnRango.filter(v =>
       (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
       (productoParam === "Todos los productos" || v.Articulo === productoParam)
     );
-    console.log(`🔍 Ventas filtradas por categoría/producto: ${ventasFiltradas.length} de ${ventasEnRango.length}`);
 
-    // Verificar recibos únicos después del filtrado
-    const recibosUnicos = new Set<string>();
-    ventasFiltradas.forEach(v => {
-      if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
-        recibosUnicos.add(v.NumeroRecibo);
-      }
-    });
-    console.log(`🧾 Recibos únicos después de filtrar: ${recibosUnicos.size}`);
-
-    // Agrupar datos para mostrar en el gráfico
     const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
 
-    // Agrupar todo el historial para proyecciones
-    const agrupadasHistorialCompleto = agruparVentasPorTiempo(
-      ventasHistoricas.filter(v =>
-        (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
-        (productoParam === "Todos los productos" || v.Articulo === productoParam)
-      ),
-      agrupacion
-    );
-
-    // Colores fijos para las métricas principales
-    const coloresFijos = {
-      articulos: 'rgba(75, 192, 192, 0.5)',      // celeste
-      recibosCount: 'rgba(255, 99, 132, 0.5)',   // rosa
-      ventasNetas: 'rgba(153, 102, 255, 0.5)',   // violeta
-    };
-
-    // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
 
-      // Ajuste para asegurar compatibilidad con las claves para articulos
       const metricaKey = met.key === "articulos" ? "articulos" : met.key;
 
       const data = timeLabels.map(lbl => {
@@ -376,218 +287,17 @@ function generateChartData(
         return valor;
       });
 
-      // Diagnóstico para recibosCount
-      if (metricaKey === "recibosCount") {
-        console.log(`🧾 Dataset recibosCount generado con ${data.filter(v => v > 0).length} valores positivos de ${data.length}`);
-      }
-
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
-        backgroundColor: coloresFijos[metricaKey as keyof typeof coloresFijos] || obtenerColor(0),
+        backgroundColor: obtenerColor(0),
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
     });
-
-    // Agregar proyecciones si están habilitadas
-    if (metricasVisibles.includes("proyeccion")) {
-      const clavesProyectadas = metricasVisibles.filter(m => m !== "proyeccion");
-
-      clavesProyectadas.forEach((clave) => {
-        const datosPorClave = generarProyeccionBase(agrupadasHistorialCompleto, clave, agrupacion);
-        const tendencia = tendenciaPorSemana(datosPorClave);
-
-        const generarGlobales = agrupacion === "Mensual" ? generarMesesGlobales : agrupacion === "Semanal" ? generarSemanasGlobales : generarDiasGlobales;
-        const parsearFecha = agrupacion === "Semanal" ? parseIsoWeekLabel : (lbl: string) => dayjs(lbl);
-
-        const allLabels = generarGlobales(start, endExtendido);
-        const proyeccionData = allLabels.map(label => {
-          const date = parsearFecha(label);
-          const periodo = agrupacion === "Semanal"
-            ? date.isoWeek()
-            : agrupacion === "Mensual"
-              ? date.month() + 1
-              : date.dayOfYear();
-          const año = date.year();
-
-          let valor: number | null = null;
-
-          if (clave === "ventasNetas") {
-            const base = datosPorClave[periodo]?.[año - 1];
-            const anterior2 = datosPorClave[periodo]?.[año - 2];
-
-            if (base != null) {
-              const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO;
-              valor = base * ratio;
-              const desde = dayjs().year(año - 1).month(date.month());
-              valor = ajustarPorInflacion(date, valor, desde);
-            }
-          } else {
-            valor = calcularValorBase(datosPorClave, periodo, año, tendencia);
-          }
-
-          if (valor != null) {
-            valor = Math.round(valor);
-          }
-          return valor;
-        });
-
-        // Suavizar proyección con media móvil
-        const proyeccionSuavizada = calcularMediaMovil(proyeccionData, 3).map(v => v != null ? Math.round(v) : null);
-
-        // Encontrar el punto donde comienza la proyección
-        const ultimoLabelReal = baseTimeLabels[baseTimeLabels.length - 1];
-        const inicioProyeccionIndex = allLabels.findIndex(lbl => lbl === ultimoLabelReal) + 1;
-
-        // Crear dataset para barras proyectadas (solo mostrar en el futuro)
-        const barrasProyectadas = allLabels.map((lbl, i) => {
-          return i < inicioProyeccionIndex ? null : proyeccionSuavizada[i];
-        });
-
-        // Agregar dataset para barras proyectadas
-        datasets.push({
-          label: `🟪 Proyección Barras - ${clave}`,
-          data: barrasProyectadas,
-          backgroundColor: "rgba(180, 180, 180, 0.25)",
-          borderSkipped: false,
-          type: "bar",
-          barPercentage: 0.8,
-          categoryPercentage: 0.9,
-          stack: undefined
-        });
-
-        // Agregar dataset para línea de proyección
-        datasets.push({
-          label: `📈 Proyección Estacional - ${clave}`,
-          data: proyeccionSuavizada,
-          borderColor: "rgb(124, 124, 124)",
-          borderWidth: 2,
-          backgroundColor: "transparent",
-          borderDash: [5, 5],
-          type: "line",
-          tension: 0.3,
-          pointRadius: 0
-        });
-
-        // Actualizar etiquetas de tiempo para incluir proyección
-        timeLabels = Array.from(new Set([...timeLabels, ...allLabels]));
-      });
-    }
-
-    // Agregar líneas verticales para cambios de año
-    yearChangeLines = [];
-    let lastYear = null;
-    timeLabels.forEach((label) => {
-      const currentDate = agrupacion === "Semanal" ? parseIsoWeekLabel(label) : dayjs(label);
-      const currentYear = currentDate.year();
-      if (lastYear !== null && currentYear !== lastYear) {
-        yearChangeLines.push({
-          type: 'line',
-          scaleID: 'x',
-          value: label,
-          borderColor: 'gray',
-          borderDash: [6, 6],
-          borderWidth: 1,
-          label: {
-            display: true,
-            content: `Año ${currentYear}`,
-            position: 'start'
-          }
-        });
-      }
-      lastYear = currentYear;
-    });
   }
 
-  // Configurar opciones del gráfico
-  return {
-    chartData: { labels: timeLabels, datasets },
-    chartOptions: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        annotation: { annotations: yearChangeLines },
-        tooltip: {
-          callbacks: {
-            title: (tooltipItems: any) => {
-              const lbl = tooltipItems[0].label;
-              if (agrupacion === "Semanal") {
-                const [yearStr, weekStr] = lbl.split('-W');
-                const year = parseInt(yearStr, 10);
-                const week = parseInt(weekStr, 10);
-                const startOfWeek = dayjs().year(year).isoWeek(week).startOf('isoWeek');
-                const endOfWeek = dayjs().year(year).isoWeek(week).endOf('isoWeek');
-                return `Semana del ${startOfWeek.format('DD/MM/YYYY')} al ${endOfWeek.format('DD/MM/YYYY')}`;
-              } else if (agrupacion === "Mensual") {
-                const [year, month] = lbl.split('-');
-                const startOfMonth = dayjs(`${year}-${month}-01`).startOf('month');
-                const endOfMonth = dayjs(`${year}-${month}-01`).endOf('month');
-                return `Mes del ${startOfMonth.format('DD/MM/YYYY')} al ${endOfMonth.format('DD/MM/YYYY')}`;
-              } else {
-                return `Día: ${dayjs(lbl, "YYYY-MM-DD").format('DD/MM/YYYY')}`;
-              }
-            },
-            label: (context: any) => {
-              const label = context.dataset.label || '';
-              const value = context.raw;
-
-              const esVenta = label.toLowerCase().includes("ventasnetas");
-
-              if (value == null) return null;
-              return esVenta
-                ? `${label}: $${value.toLocaleString("es-AR")}`
-                : `${label}: ${value.toLocaleString("es-AR")}`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          type: 'category',
-          grid: { display: false },
-          ticks: {
-            autoSkip: false,
-            maxRotation: 45,
-            minRotation: 45,
-            font: {
-              size: 9
-            },
-            callback: function (value: any, index: number, values: any[]) {
-              const label = this.getLabelForValue(value);
-              let date;
-              if (agrupacion === "Semanal" && typeof label === "string" && label.includes("-W")) {
-                date = parseIsoWeekLabel(label);
-              } else {
-                date = dayjs(label);
-              }
-
-              if (!date.isValid()) return "";
-
-              // Mostrar solo si es el primer label o si cambió el mes
-              if (index === 0) {
-                return date.format("MMM").toUpperCase();
-              }
-
-              const prevLabel = this.getLabelForValue(values[index - 1].value);
-              let prevDate;
-              if (agrupacion === "Semanal" && prevLabel.includes("-W")) {
-                prevDate = parseIsoWeekLabel(prevLabel);
-              } else {
-                prevDate = dayjs(prevLabel);
-              }
-
-              const mismoMes = prevDate.isValid() && prevDate.month() === date.month() && prevDate.year() === date.year();
-
-              return mismoMes ? "" : date.format("MMM").toUpperCase();
-            }
-          }
-        },
-        y: { beginAtZero: true }
-      }
-    }
-  };
+  return { chartData: { labels: timeLabels, datasets }, chartOptions: {} };
 }
 
 export {
