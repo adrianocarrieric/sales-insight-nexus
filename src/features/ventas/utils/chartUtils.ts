@@ -70,10 +70,12 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
  * Agrupa ventas por período de tiempo (día, semana, mes)
  */
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
+  console.log("Ventas filtradas:", ventasFiltradas.length);
   const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount?: number }> = {};
 
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) return;
+    console.log("Procesando venta:", { fecha: v.Fecha, recibo: v.NumeroRecibo, tipo: v.TipoRecibo });
     
     let label: string;
     if (agrupacion === "Mensual") {
@@ -91,17 +93,20 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     result[label].articulos += v.Cantidad || 0;
     result[label].ventasNetas += v.VentasNetas || 0;
 
-    if (v.TipoRecibo !== "Reembolso" && v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
-      result[label].recibos.add(v.NumeroRecibo);
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+      if (v.TipoRecibo !== "Reembolso") {
+        const reciboLimpio = v.NumeroRecibo.trim();
+        result[label].recibos.add(reciboLimpio);
+        console.log(`Agregando recibo ${reciboLimpio} a ${label}`);
+      }
     }
   });
 
   // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
+    console.log(`${lbl}: ${result[lbl].recibosCount} recibos`);
   });
-
-  // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
     result[lbl].recibosCount = result[lbl].recibos.size;
   });
@@ -203,7 +208,7 @@ export function generateChartData(
   agrupacion: string,
   todasCategorias: string[],
   metric: string,
-  metricasVisibles: string[] = ["recibosCount"]
+  metricasVisibles: string[] = ["recibosCount", "ventasNetas", "articulos"]
 ) {
   if (!ventas || ventas.length === 0) 
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
