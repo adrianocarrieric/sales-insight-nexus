@@ -45,6 +45,10 @@ const INFLACION_MENSUAL: Record<string, number> = {
   "2026-01": 1.5, "2026-02": 1.5, "2026-03": 1.5
 };
 
+// Constantes para los cálculos de proyección
+const CRECIMIENTO_POR_DEFECTO = 1.1;
+const CRECIMIENTO_MAXIMO = 1.3;
+
 /**
  * Ajusta un valor por la inflación acumulada entre dos fechas
  */
@@ -188,6 +192,25 @@ function generarProyeccionBase(agrupadas: Record<string, any>, clave: string, ag
 }
 
 /**
+ * Calcula el valor base para proyecciones
+ */
+function calcularValorBase(datosPorClave: Record<string | number, Record<number, number>>, 
+                          periodo: string | number, 
+                          año: number, 
+                          tendencia: Record<string, number> = {}): number | null {
+  const base = datosPorClave[periodo]?.[año - 1];
+  const anterior2 = datosPorClave[periodo]?.[año - 2];
+  
+  if (base != null) {
+    const tasa = (tendencia[periodo as string]) || CRECIMIENTO_POR_DEFECTO;
+    const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : tasa;
+    return base * ratio;
+  }
+  
+  return null;
+}
+
+/**
  * Genera datos para el gráfico de acuerdo a los filtros
  */
 export function generateChartData(
@@ -316,16 +339,13 @@ export function generateChartData(
             const anterior2 = datosPorClave[periodo]?.[año - 2];
 
             if (base != null) {
-              const ratio = anterior2 != null ? Math.min(base / anterior2, 1.3) : 1.1; // 10% de crecimiento si no hay anterior2
+              const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO;
               valor = base * ratio;
               const desde = dayjs().year(año - 1).month(date.month());
               valor = ajustarPorInflacion(date, valor, desde);
             }
           } else {
-            const base = datosPorClave[periodo]?.[año - 1];
-            const anterior2 = datosPorClave[periodo]?.[año - 2];
-            const ratio = anterior2 != null ? (tendencia[periodo] || 1) : 1.1; // 10% por defecto
-            valor = base != null ? base * ratio : null;
+            valor = calcularValorBase(datosPorClave, periodo, año, tendencia);
           }
 
           if (valor != null) {
@@ -490,3 +510,12 @@ export function generateChartData(
     }
   };
 }
+
+export {
+  obtenerColor,
+  agruparVentasPorTiempo,
+  calcularMediaMovil,
+  parseIsoWeekLabel,
+  tendenciaPorSemana,
+  calcularValorBase
+};
