@@ -1,0 +1,71 @@
+✅ Puntos clave a revisar
+1. ¿Se está incluyendo recibosCount en metricasVisibles?
+Asegurate de que cuando llamás a generateChartData(...), el array metricasVisibles contenga "recibosCount".
+
+ts
+Copiar
+Editar
+metricasVisibles: string[] = ["recibosCount"]
+Si no lo estás pasando explícitamente, y recibosCount no está en el array por defecto, no se mostrará en el gráfico.
+
+2. ¿La clave recibosCount existe en los objetos de agrupación?
+En tu función agruparVentasPorTiempo, agregás los recibos como Set y después hacés esto:
+
+ts
+Copiar
+Editar
+// Calcular recibosCount a partir del Set de recibos
+Object.keys(result).forEach(lbl => {
+  result[lbl].recibosCount = result[lbl].recibos.size;
+});
+👉 Esto está perfecto. Pero asegurate de que v.NumeroRecibo esté bien definido y no tenga espacios. Hacés:
+
+ts
+Copiar
+Editar
+if (v.TipoRecibo !== "Reembolso" && v.NumeroRecibo && v.NumeroRecibo.trim() !== '')
+🔍 Recomendación: Loggeá temporalmente para ver si los datos entran correctamente:
+
+ts
+Copiar
+Editar
+console.log("RECIBO:", v.NumeroRecibo, "FECHA:", v.Fecha);
+3. ¿El campo NumeroRecibo viene con nombre distinto?
+Si tus datos CSV tienen el campo como "Número de Recibo" o "NroRecibo", pero tu interfaz Venta lo define como NumeroRecibo, puede que el campo esté vacío.
+
+👉 Verificá en tu archivo o hook useSalesData cómo estás mapeando ese campo.
+
+4. ¿Se están filtrando correctamente por fecha en ventasEnRango?
+Si los recibos están en ventasHistoricas, pero el rango es corto, no los vas a ver reflejados.
+
+ts
+Copiar
+Editar
+const ventasEnRango = ventasHistoricas.filter(v => {
+  if (!v.Fecha) return false;
+  const fv = dayjs(v.Fecha);
+  return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
+});
+🔍 Revisá con un console.log(ventasEnRango.length) si están entrando datos.
+
+5. ¿El label de agrupación coincide con los datos en timeLabels?
+Puede que la agrupación esté generando labels con formato que no matchea con los generados por agruparVentasPorTiempo.
+
+Ejemplo:
+
+agruparVentasPorTiempo usa: formatIsoWeekKey(v.Fecha) → 2024-W12
+
+Pero si generarSemanasGlobales genera 2024-S12, no hay match.
+
+👉 Asegurate de que formatIsoWeekKey y generarSemanasGlobales usan el mismo formato exacto (ej. YYYY-[W]WW).
+
+✅ Qué podés hacer ya mismo
+Confirmá que recibosCount esté en metricasVisibles.
+
+Verificá con console.log si NumeroRecibo viene cargado.
+
+Confirmá que los labels entre timeLabels y agrupadas matchean.
+
+Revisá que formatIsoWeekKey devuelva el mismo formato que generarSemanasGlobales.
+
+Si querés, pasame cómo estás llamando a generateChartData(...) o el código de DateSelector y useSalesData, y te lo reviso todo en conjunto.
