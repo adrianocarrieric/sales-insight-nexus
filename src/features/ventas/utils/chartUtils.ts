@@ -1,4 +1,3 @@
-
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import minMax from 'dayjs/plugin/minMax';
@@ -91,14 +90,9 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     result[label].articulos += v.Cantidad || 0;
     result[label].ventasNetas += v.VentasNetas || 0;
 
-    if (v.TipoRecibo !== "Reembolso" && v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
       result[label].recibos.add(v.NumeroRecibo);
     }
-  });
-
-  // Calcular recibosCount a partir del Set de recibos
-  Object.keys(result).forEach(lbl => {
-    result[lbl].recibosCount = result[lbl].recibos.size;
   });
 
   // Calcular recibosCount a partir del Set de recibos
