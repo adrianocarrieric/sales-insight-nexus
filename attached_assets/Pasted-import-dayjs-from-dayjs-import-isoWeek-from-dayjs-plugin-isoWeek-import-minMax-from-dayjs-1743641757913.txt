@@ -1,0 +1,480 @@
+import dayjs from 'dayjs';
+
+import isoWeek from 'dayjs/plugin/isoWeek';
+import minMax from 'dayjs/plugin/minMax';
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
+
+import {
+  formatIsoWeekKey,
+  generarDiasGlobales,
+  generarSemanasGlobales,
+  generarMesesGlobales
+} from './dateUtils';
+
+import { METRICAS } from '../constants/metricas';
+import 'dayjs/locale/es';
+import dayOfYear from 'dayjs/plugin/dayOfYear';
+
+dayjs.locale('es');
+dayjs.extend(dayOfYear);
+dayjs.extend(isoWeek);
+dayjs.extend(minMax);
+dayjs.extend(isSameOrBefore);
+
+const INFLACION_MENSUAL = {
+  "2022-02": 3.8, "2022-03": 6.7, "2022-04": 6.0, "2022-05": 5.1,
+  "2022-06": 5.3, "2022-07": 7.4, "2022-08": 7.0, "2022-09": 6.2,
+  "2022-10": 6.3, "2022-11": 4.9, "2022-12": 5.1,
+
+  "2023-01": 6.0, "2023-02": 6.6, "2023-03": 7.7, "2023-04": 8.4,
+  "2023-05": 7.8, "2023-06": 6.0, "2023-07": 6.3, "2023-08": 6.9,
+  "2023-09": 7.0, "2023-10": 8.3, "2023-11": 12.9, "2023-12": 25.5,
+
+  "2024-01": 20.6, "2024-02": 13.2, "2024-03": 10.9, "2024-04": 8.8,
+  "2024-05": 4.2, "2024-06": 4.6, "2024-07": 4.0, "2024-08": 4.2,
+  "2024-09": 3.5, "2024-10": 2.7, "2024-11": 2.4, "2024-12": 2.7,
+
+  "2025-01": 2.2, "2025-02": 2.4, "2025-03": 2.5, "2025-04": 2.3,
+  "2025-05": 2.3, "2025-06": 2.3, "2025-07": 2.3, "2025-08": 2.3,
+  "2025-09": 2.3, "2025-10": 2.3, "2025-11": 2.3, "2025-12": 2.3,
+
+  "2026-01": 1.5, "2026-02": 1.5, "2026-03": 1.5
+};
+
+const CRECIMIENTO_POR_DEFECTO = 1.1;
+const CRECIMIENTO_MAXIMO = 1.3;
+
+function ajustarPorInflacion(hasta, valor, desde = dayjs("2022-02")) {
+  let factor = 1;
+  let cursor = desde.clone();
+
+  while (cursor.isBefore(hasta, 'month') || cursor.isSame(hasta, 'month')) {
+    const clave = cursor.format("YYYY-MM");
+    const inflacionMensual = INFLACION_MENSUAL[clave];
+
+    if (inflacionMensual != null) {
+      factor *= 1 + (inflacionMensual / 100);
+    }
+
+    cursor = cursor.add(1, 'month');
+  }
+
+  return valor * factor;
+}
+
+
+
+function agruparVentasPorTiempo(ventasFiltradas, agrupacion) {
+  const result = {};
+
+  ventasFiltradas.forEach(v => {
+    let label;
+    if (agrupacion === "Mensual") {
+      label = dayjs(v.Fecha).format("YYYY-MM");
+    } else if (agrupacion === "Semanal") {
+      label = formatIsoWeekKey(v.Fecha);
+    } else {
+      label = dayjs(v.Fecha).format("YYYY-MM-DD");
+    }
+
+    if (!result[label]) {
+      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0 };
+    }
+
+    result[label].articulos += v.Cantidad || 0;
+    result[label].ventasNetas += v.VentasNetas || 0;
+
+    if (v.TipoRecibo !== "Reembolso") {
+      result[label].recibos.add(v.NumeroRecibo);
+    }
+  });
+
+  Object.keys(result).forEach(lbl => {
+    result[lbl].recibosCount = result[lbl].recibos.size;
+  });
+
+  return result;
+}
+
+function obtenerColor(idx) {
+  const colors = [
+    'rgba(75, 192, 192, 0.5)',
+    'rgba(255, 99, 132, 0.5)',
+    'rgba(153, 102, 255, 0.5)',
+    'rgba(255, 159, 64, 0.5)',
+    'rgba(54, 162, 235, 0.5)',
+    'rgba(255, 206, 86, 0.5)',
+    'rgba(201, 203, 207, 0.5)',
+  ];
+  return colors[idx % colors.length];
+}
+
+function parseIsoWeekLabel(label) {
+  const [year, week] = label.split('-W');
+  return dayjs().year(parseInt(year)).isoWeek(parseInt(week));
+}
+
+function calcularMediaMovil(data, windowSize = 3) {
+  const result = [];
+  for (let i = 0; i < data.length; i++) {
+    const start = Math.max(0, i - Math.floor(windowSize / 2));
+    const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+    const subset = data.slice(start, end).filter(v => v != null);
+    const promedio = subset.length ? subset.reduce((a, b) => a + b, 0) / subset.length : null;
+    result.push(promedio);
+  }
+  return result;
+}
+
+function tendenciaPorSemana(datosPorSemana, maxGrowth = 1.3) {
+  const tendencia = {};
+  for (let periodo in datosPorSemana) {
+    const años = Object.keys(datosPorSemana[periodo] || {}).map(Number);
+    if (años.length >= 2) {
+      años.sort();
+      const y1 = datosPorSemana[periodo][años[0]];
+      const y2 = datosPorSemana[periodo][años[1]];
+      if (y1 && y2) {
+        let ratio = y2 / y1;
+        if (ratio > maxGrowth) ratio = maxGrowth;
+        tendencia[periodo] = ratio;
+      }
+    }
+  }
+  return tendencia;
+}
+
+function generarProyeccionBase(agrupadas, clave, agrupacion) {
+  const datosPorClave = {};
+  for (let lbl in agrupadas) {
+    let periodo;
+    if (agrupacion === "Semanal" && lbl.includes("-W")) {
+      const [año, semana] = lbl.split("-W").map(Number);
+      periodo = semana;
+      if (!datosPorClave[periodo]) datosPorClave[periodo] = {};
+      datosPorClave[periodo][año] = agrupadas[lbl][clave] || 0;
+    } else if (agrupacion === "Mensual") {
+      const [año, mes] = lbl.split("-").map(Number);
+      periodo = mes;
+      if (!datosPorClave[periodo]) datosPorClave[periodo] = {};
+      datosPorClave[periodo][año] = agrupadas[lbl][clave] || 0;
+    } else if (agrupacion === "Diario") {
+      const date = dayjs(lbl);
+      const dayOfYear = date.dayOfYear();
+      const year = date.year();
+      periodo = dayOfYear;
+      if (!datosPorClave[periodo]) datosPorClave[periodo] = {};
+      datosPorClave[periodo][year] = agrupadas[lbl][clave] || 0;
+    }
+  }
+  return datosPorClave;
+}
+
+function calcularValorBase(datosPorClave, periodo, año, crecimientoPorDefecto = 1.1, maxCrecimiento = 1.3) {
+  const base = datosPorClave[periodo]?.[año - 1];
+  const anterior2 = datosPorClave[periodo]?.[año - 2];
+  const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO;
+  return base != null ? base * ratio : null;
+}
+
+function generarProyecciones(clavesProyectadas, agrupadasHistorialCompleto, agrupacion, start, endExtendido) {
+  // Lógica de proyecciones aquí
+}
+
+export function generateChartData(
+  ventas,
+  categoriaParam,
+  productoParam,
+  dateRange,
+  agrupacion,
+  todasCategorias,
+  metric,
+  metricasVisibles = ["recibosCount"]
+) {
+  if (!Array.isArray(ventas) || ventas.length === 0) {
+    console.warn("El arreglo de ventas está vacío. No se generarán datos.");
+    return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
+  }
+  ventas.forEach(v => {
+    if (!v.Fecha || !dayjs(v.Fecha).isValid()) {
+      throw new Error(`La venta con datos ${JSON.stringify(v)} tiene una fecha inválida.`);
+    }
+  });
+
+  let yearChangeLines = [];
+
+  const individualMode = !Array.isArray(categoriaParam);
+  const { startDate, endDate } = dateRange[0];
+  const start = dayjs(startDate);
+  const end = dayjs(endDate);
+  const baseTimeLabels = agrupacion === "Mensual"
+    ? generarMesesGlobales(start, end)
+    : agrupacion === "Semanal"
+      ? generarSemanasGlobales(start, end)
+      : generarDiasGlobales(start, end);
+  let endExtendido = end;
+  let timeLabels = baseTimeLabels;
+
+  if (metricasVisibles.includes("proyeccion")) {
+    endExtendido = agrupacion === "Semanal"
+      ? end.add(52, "week")
+      : agrupacion === "Mensual"
+        ? end.add(12, "month")
+        : end.add(90, "day");
+
+    timeLabels = agrupacion === "Mensual"
+      ? generarMesesGlobales(start, endExtendido)
+      : agrupacion === "Semanal"
+        ? generarSemanasGlobales(start, endExtendido)
+        : generarDiasGlobales(start, endExtendido);
+  }
+
+  // Usamos toda la historia para generar proyecciones
+  const ventasHistoricas = ventas.filter(v => dayjs(v.Fecha).isValid());
+
+  // Pero solo el rango seleccionado (extendido) para mostrar en el gráfico
+  const ventasEnRango = ventasHistoricas.filter(v => {
+    const fv = dayjs(v.Fecha);
+    return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
+  });
+
+
+  let datasets = [];
+  if (individualMode) {
+    const ventasFiltradas = ventasEnRango.filter(v =>
+      (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
+      (productoParam === "Todos los productos" || v.Articulo === productoParam)
+    );
+
+    // 👇 esta es para mostrar los datos reales del rango seleccionado
+    const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
+
+    // 👇 esta es para calcular proyecciones usando toda la historia
+    const agrupadasHistorialCompleto = agruparVentasPorTiempo(
+      ventasHistoricas.filter(v =>
+        (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
+        (productoParam === "Todos los productos" || v.Articulo === productoParam)
+      ),
+      agrupacion
+    );
+
+    const coloresFijos = {
+      unidades: 'rgba(75, 192, 192, 0.5)',      // celeste
+      recibosCount: 'rgba(255, 99, 132, 0.5)',  // rosa
+      ventasNetas: 'rgba(153, 102, 255, 0.5)',  // violeta
+    };
+
+    METRICAS.forEach((met) => {
+      if (met.key === "proyeccion") return;
+      const data = timeLabels.map(lbl => agrupadas[lbl]?.[met.key] || 0);
+      datasets.push({
+        label: `${met.label} - ${categoriaParam}`,
+        data,
+        backgroundColor: coloresFijos[met.key] || obtenerColor(0),
+        hidden: !metricasVisibles.includes(met.key),
+        stack: met.key
+      });
+    });
+
+    if (metricasVisibles.includes("proyeccion")) {
+      const clavesProyectadas = metricasVisibles.filter(m => m !== "proyeccion");
+      clavesProyectadas.forEach((clave) => {
+        const datosPorClave = generarProyeccionBase(agrupadasHistorialCompleto, clave, agrupacion);
+        const tendencia = tendenciaPorSemana(datosPorClave);
+
+        const generarGlobales = agrupacion === "Mensual" ? generarMesesGlobales : agrupacion === "Semanal" ? generarSemanasGlobales : generarDiasGlobales;
+        const parsearFecha = agrupacion === "Semanal" ? parseIsoWeekLabel : (lbl) => dayjs(lbl);
+
+        const allLabels = generarGlobales(start, endExtendido);
+        const proyeccionData = allLabels.map(label => {
+          const date = parsearFecha(label);
+          const periodo = agrupacion === "Semanal"
+            ? date.isoWeek()
+            : agrupacion === "Mensual"
+              ? date.month() + 1
+              : date.dayOfYear();
+          const año = date.year();
+          
+          let valor = null;
+
+          if (clave === "ventasNetas") {
+            const base = datosPorClave[periodo]?.[año - 1];
+            const anterior2 = datosPorClave[periodo]?.[año - 2];
+
+            if (base != null) {
+              const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO; // usamos 10% de crecimiento si no hay anterior2
+              valor = base * ratio;
+              const desde = dayjs().year(año - 1).month(date.month());
+              valor = ajustarPorInflacion(date, valor, desde);
+            }
+          } else {
+            valor = calcularValorBase(datosPorClave, periodo, año, tendencia);
+          }
+
+          if (valor != null) {
+            valor = Math.round(valor);
+          }
+          return valor;
+        });
+
+
+        const proyeccionSuavizada = calcularMediaMovil(proyeccionData, 3).map(v => v != null ? Math.round(v) : null);
+        const primerLabelFuturo = baseTimeLabels[baseTimeLabels.length - 1];
+        // Identificar el último label real
+        const ultimoLabelReal = baseTimeLabels[baseTimeLabels.length - 1];
+
+        // Buscar su índice exacto dentro de allLabels
+        const inicioProyeccionIndex = allLabels.findIndex(lbl => lbl === ultimoLabelReal) + 1;
+
+        // Mapear las proyecciones con null antes del inicio
+        const barrasProyectadas = allLabels.map((lbl, i) => {
+          return i <= baseTimeLabels.length - 1 ? null : proyeccionSuavizada[i];
+        });
+
+        datasets.push({
+          label: `🟪 Proyección Barras - ${clave}`,
+          data: barrasProyectadas,
+          backgroundColor: "rgba(180, 180, 180, 0.25)",
+          borderSkipped: false,
+          type: "bar",
+          barPercentage: 0.8,
+          categoryPercentage: 0.9,
+          stack: undefined
+        });
+
+        datasets.push({
+          label: `📈 Proyección Estacional - ${clave}`,
+          data: proyeccionSuavizada,
+          borderColor: "rgb(124, 124, 124)",
+          borderWidth: 2,
+          backgroundColor: "transparent",
+          borderDash: [5, 5],
+          type: "line",
+          tension: 0.3,
+          pointRadius: 0
+        });
+
+        timeLabels = Array.from(new Set([...timeLabels, ...allLabels]));
+      });
+    }
+
+    yearChangeLines = [];
+    let lastYear = null;
+    timeLabels.forEach((label) => {
+      const currentDate = agrupacion === "Semanal" ? parseIsoWeekLabel(label) : dayjs(label);
+      const currentYear = currentDate.year();
+      if (lastYear !== null && currentYear !== lastYear) {
+        yearChangeLines.push({
+          type: 'line',
+          scaleID: 'x',
+          value: label,
+          borderColor: 'gray',
+          borderDash: [6, 6],
+          borderWidth: 1,
+          label: {
+            display: true,
+            content: `Año ${currentYear}`,
+            position: 'start'
+          }
+        });
+      }
+      lastYear = currentYear;
+    });
+  }
+
+  return {
+    chartData: { labels: timeLabels, datasets },
+    chartOptions: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        annotation: { annotations: yearChangeLines },
+        tooltip: {
+          callbacks: {
+            title: (tooltipItems) => {
+              const lbl = tooltipItems[0].label;
+              if (agrupacion === "Semanal") {
+                const [yearStr, weekStr] = lbl.split('-W');
+                const year = parseInt(yearStr, 10);
+                const week = parseInt(weekStr, 10);
+                const startOfWeek = dayjs().year(year).isoWeek(week).startOf('isoWeek');
+                const endOfWeek = dayjs().year(year).isoWeek(week).endOf('isoWeek');
+                return `Semana del ${startOfWeek.format('DD/MM/YYYY')} al ${endOfWeek.format('DD/MM/YYYY')}`;
+              } else if (agrupacion === "Mensual") {
+                const [year, month] = lbl.split('-');
+                const startOfMonth = dayjs(`${year}-${month}-01`).startOf('month');
+                const endOfMonth = dayjs(`${year}-${month}-01`).endOf('month');
+                return `Mes del ${startOfMonth.format('DD/MM/YYYY')} al ${endOfMonth.format('DD/MM/YYYY')}`;
+              } else {
+                return `Día: ${dayjs(lbl, "YYYY-MM-DD").format('DD/MM/YYYY')}`;
+              }
+            },
+            label: (context) => {
+              const label = context.dataset.label || '';
+              const value = context.raw;
+
+              const esVenta = label.toLowerCase().includes("ventasnetas");
+
+              if (value == null) return null;
+              return esVenta
+                ? `${label}: $${value.toLocaleString("es-AR")}`
+                : `${label}: ${value.toLocaleString("es-AR")}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'category',
+          grid: { display: false },
+          ticks: {
+            autoSkip: false,
+            maxRotation: 45,
+            minRotation: 45,
+            font: {
+              size: 9
+            },
+            callback: function (value, index, values) {
+              const label = this.getLabelForValue(value);
+              let date;
+              if (agrupacion === "Semanal" && typeof label === "string" && label.includes("-W")) {
+                date = parseIsoWeekLabel(label);
+              } else {
+                date = dayjs(label);
+              }
+
+              if (!date.isValid()) return "";
+
+              // Mostrar solo si es el primer label o si cambió el mes
+              if (index === 0) {
+                return date.format("MMM").toUpperCase();
+              }
+
+              const prevLabel = this.getLabelForValue(values[index - 1].value);
+              let prevDate;
+              if (agrupacion === "Semanal" && prevLabel.includes("-W")) {
+                prevDate = parseIsoWeekLabel(prevLabel);
+              } else {
+                prevDate = dayjs(prevLabel);
+              }
+
+              const mismoMes = prevDate.isValid() && prevDate.month() === date.month() && prevDate.year() === date.year();
+
+              return mismoMes ? "" : date.format("MMM").toUpperCase();
+            }
+          }
+        },
+        y: { beginAtZero: true }
+      }
+    }
+  };
+}
+
+export {
+  obtenerColor,
+  agruparVentasPorTiempo,
+  calcularMediaMovil,
+  parseIsoWeekLabel,
+  tendenciaPorSemana
+};
