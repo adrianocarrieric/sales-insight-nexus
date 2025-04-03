@@ -1,3 +1,4 @@
+
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import minMax from 'dayjs/plugin/minMax';
@@ -69,7 +70,7 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
  * Agrupa ventas por período de tiempo (día, semana, mes)
  */
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
-  const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount?: number }> = {};
+  const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> = {};
 
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) return;
@@ -84,7 +85,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     }
 
     if (!result[label]) {
-      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0 };
+      result[label] = { articulos: 0, recibos: new Set(), ventasNetas: 0, recibosCount: 0 };
     }
 
     result[label].articulos += v.Cantidad || 0;
@@ -100,7 +101,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     result[lbl].recibosCount = result[lbl].recibos.size;
   });
 
-  return result as Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }>;
+  return result;
 }
 
 /**
