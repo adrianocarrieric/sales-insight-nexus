@@ -90,7 +90,7 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
 
     console.log("Procesando venta:", {
       fecha: v.Fecha,
-      ventasNetas: v.VentasNetas,
+      ventasNetas: parseFloat(v.VentasNetas) || 0,
       categoria: v.Categoria,
       datosCompletos: v
     });

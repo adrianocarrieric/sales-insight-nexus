@@ -12,7 +12,7 @@ export const METRICAS = [
   },
   { 
     key: "ventasNetas", 
-    label: "Venta Neta", 
+    label: "Ventas Netas", 
     color: "rgba(153, 102, 255, 0.5)" 
   },
   { 
