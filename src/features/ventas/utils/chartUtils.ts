@@ -72,9 +72,17 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
   console.log("Ventas filtradas:", ventasFiltradas.length);
   const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount?: number }> = {};
 
+  console.log("Datos que llegan a agruparVentasPorTiempo:", ventasFiltradas.slice(0, 5));
+
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) return;
-    console.log("Procesando venta:", { fecha: v.Fecha, recibo: v.NumeroRecibo, tipo: v.TipoRecibo });
+    console.log("Procesando venta:", {
+      fecha: v.Fecha,
+      numeroRecibo: v["Número de recibo"],
+      tipoRecibo: v["Tipo de recibo"],
+      ventasNetas: v.VentasNetas,
+      categoria: v.Categoria
+    });
 
     let label: string;
     if (agrupacion === "Mensual") {
