@@ -101,11 +101,25 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
     result[label].ventasNetas += v.VentasNetas || 0;
 
     // Solo agregamos el recibo si no es reembolso y tiene número válido
-    if (v.TipoRecibo !== "Reembolso" && v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
-      // Limpiamos el número de recibo de espacios
-      const reciboLimpio = v.NumeroRecibo.trim();
+    const numeroRecibo = v["Número de recibo"];
+    const tipoRecibo = v["Tipo de recibo"];
+    
+    console.log("Procesando recibo:", {
+      numero: numeroRecibo,
+      tipo: tipoRecibo,
+      fecha: v.Fecha,
+      label: label
+    });
+
+    if (tipoRecibo !== "Reembolso" && numeroRecibo && numeroRecibo.trim() !== '') {
+      const reciboLimpio = numeroRecibo.trim();
       result[label].recibos.add(reciboLimpio);
-      console.log(`Agregando recibo ${reciboLimpio} a ${label}`);
+      console.log(`✅ Agregando recibo ${reciboLimpio} a ${label}`);
+    } else {
+      console.log(`❌ Recibo no válido o es reembolso:`, {
+        esReembolso: tipoRecibo === "Reembolso",
+        numeroVacio: !numeroRecibo
+      });
     }
   });
 
