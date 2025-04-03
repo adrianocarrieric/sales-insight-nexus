@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import dayjs from "dayjs";
 import { parseCSVData } from "../utils/csvUtils";
@@ -191,6 +192,26 @@ export function useSalesData() {
       console.warn("El archivo CSV está vacío o con errores.");
       return;
     }
+    
+    // Verificar ventas con NumeroRecibo vacío o inválido
+    const ventasSinRecibo = parsedData.filter(v => !v.NumeroRecibo).length;
+    const ventasSinFecha = parsedData.filter(v => !v.Fecha).length;
+    
+    if (ventasSinRecibo > 0) {
+      console.warn(`⚠️ Hay ${ventasSinRecibo} ventas sin número de recibo válido`);
+    }
+    
+    if (ventasSinFecha > 0) {
+      console.warn(`⚠️ Hay ${ventasSinFecha} ventas sin fecha válida`);
+    }
+    
+    console.log(`📊 Total de ventas cargadas: ${parsedData.length}`);
+    console.log(`📅 Rango de fechas: ${dayjs(parsedData[0]?.Fecha).format('DD/MM/YYYY')} a ${dayjs(parsedData[parsedData.length-1]?.Fecha).format('DD/MM/YYYY')}`);
+    
+    // Verificar recibos únicos
+    const recibosUnicos = new Set(parsedData.filter(v => v.NumeroRecibo).map(v => v.NumeroRecibo));
+    console.log(`🧾 Total de recibos únicos: ${recibosUnicos.size}`);
+    
     setVentas(parsedData);
     const cats = Array.from(new Set(parsedData.map(v => v.Categoria).filter(Boolean)));
     cats.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
@@ -226,6 +247,13 @@ export function useSalesData() {
   useEffect(() => {
     if (ventas.length === 0) return;
     
+    // Asegurarse que "recibosCount" está en metricasVisibles
+    if (!metricasVisibles.includes("recibosCount")) {
+      console.warn("recibosCount no está en metricasVisibles, añadiéndolo...");
+      setMetricasVisibles(prev => [...prev, "recibosCount"]);
+      return;
+    }
+    
     const { chartData, chartOptions } = generateChartData(
       ventas,
       categoriaSeleccionada,
@@ -236,6 +264,21 @@ export function useSalesData() {
       metricaSeleccionada,
       metricasVisibles
     );
+    
+    // Verificar si hay datos de recibos en el chartData
+    const recibosDatasetsLength = chartData.datasets.filter(ds => 
+      ds.label && ds.label.toLowerCase().includes("recibo")).length;
+    
+    console.log(`🧾 Datasets de recibos generados: ${recibosDatasetsLength}`);
+    
+    // Verificar si hay valores > 0 en el dataset de recibos
+    const recibosDataset = chartData.datasets.find(ds => 
+      ds.label && ds.label.toLowerCase().includes("recibo"));
+    
+    if (recibosDataset) {
+      const valoresPositivos = recibosDataset.data.filter(v => v > 0).length;
+      console.log(`🧾 Valores positivos en dataset de recibos: ${valoresPositivos} de ${recibosDataset.data.length}`);
+    }
     
     setChartData(chartData);
     setChartOptions(chartOptions);

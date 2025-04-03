@@ -1,4 +1,3 @@
-
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import minMax from 'dayjs/plugin/minMax';
@@ -88,12 +87,23 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       ventasSinFecha++;
       return; // Omitir ventas sin fecha
     }
-    
+
+    console.log("Procesando venta:", {
+      fecha: v.Fecha,
+      ventasNetas: v.VentasNetas,
+      categoria: v.Categoria,
+      datosCompletos: v
+    });
+
     let label: string;
     if (agrupacion === "Mensual") {
       label = dayjs(v.Fecha).format("YYYY-MM");
     } else if (agrupacion === "Semanal") {
       label = formatIsoWeekKey(v.Fecha);
+      console.log("Procesando recibo:", {
+        fecha: v.Fecha,
+        label
+      });
     } else {
       label = dayjs(v.Fecha).format("YYYY-MM-DD");
     }
@@ -111,6 +121,10 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       recibosValidos++;
     } else {
       recibosInvalidos++;
+      console.log("❌ Recibo no válido o es reembolso:", {
+        esReembolso: v.TipoRecibo === "Reembolso",
+        numeroVacio: !v.NumeroRecibo || v.NumeroRecibo.trim() === ''
+      });
     }
   });
 
@@ -215,19 +229,19 @@ function generarProyeccionBase(agrupadas: Record<string, any>, clave: string, ag
 /**
  * Calcula el valor base para proyecciones
  */
-function calcularValorBase(datosPorClave: Record<string | number, Record<number, number>>, 
-                          periodo: string | number, 
-                          año: number, 
-                          tendencia: Record<string, number> = {}): number | null {
+function calcularValorBase(datosPorClave: Record<string | number, Record<number, number>>,
+  periodo: string | number,
+  año: number,
+  tendencia: Record<string, number> = {}): number | null {
   const base = datosPorClave[periodo]?.[año - 1];
   const anterior2 = datosPorClave[periodo]?.[año - 2];
-  
+
   if (base != null) {
     const tasa = (tendencia[periodo as string]) || CRECIMIENTO_POR_DEFECTO;
     const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : tasa;
     return base * ratio;
   }
-  
+
   return null;
 }
 
@@ -244,12 +258,12 @@ export function generateChartData(
   metric: string,
   metricasVisibles: string[] = ["recibosCount", "ventasNetas", "articulos"]
 ) {
-  if (!ventas || ventas.length === 0) 
+  if (!ventas || ventas.length === 0)
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
 
   // Diagnóstico inicial
   console.log(`📊 generateChartData: recibido ${ventas.length} ventas`);
-  
+
   // Verificar recibos únicos en todo el conjunto de datos
   const todosRecibos = new Set<string>();
   ventas.forEach(v => {
@@ -353,20 +367,20 @@ export function generateChartData(
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
-      
+
       // Ajuste para asegurar compatibilidad con las claves para articulos
       const metricaKey = met.key === "articulos" ? "articulos" : met.key;
-      
+
       const data = timeLabels.map(lbl => {
         const valor = agrupadas[lbl]?.[metricaKey] || 0;
         return valor;
       });
-      
+
       // Diagnóstico para recibosCount
       if (metricaKey === "recibosCount") {
         console.log(`🧾 Dataset recibosCount generado con ${data.filter(v => v > 0).length} valores positivos de ${data.length}`);
       }
-      
+
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
@@ -540,7 +554,7 @@ export function generateChartData(
             font: {
               size: 9
             },
-            callback: function(value: any, index: number, values: any[]) {
+            callback: function (value: any, index: number, values: any[]) {
               const label = this.getLabelForValue(value);
               let date;
               if (agrupacion === "Semanal" && typeof label === "string" && label.includes("-W")) {
@@ -582,5 +596,6 @@ export {
   calcularMediaMovil,
   parseIsoWeekLabel,
   tendenciaPorSemana,
-  calcularValorBase
+  calcularValorBase,
+  generateChartData
 };
