@@ -91,12 +91,15 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       recibosPorPeriodo[label] = {};
     }
 
-    if (!recibosPorPeriodo[label][v.NumeroRecibo]) {
-      recibosPorPeriodo[label][v.NumeroRecibo] = { cantidad: 0, ventasNetas: 0 };
-    }
+    // Solo procesar recibos que tengan número válido
+    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '') {
+      if (!recibosPorPeriodo[label][v.NumeroRecibo]) {
+        recibosPorPeriodo[label][v.NumeroRecibo] = { cantidad: 0, ventasNetas: 0 };
+      }
 
-    recibosPorPeriodo[label][v.NumeroRecibo].cantidad += v.Cantidad || 0;
-    recibosPorPeriodo[label][v.NumeroRecibo].ventasNetas += v.VentasNetas || 0;
+      recibosPorPeriodo[label][v.NumeroRecibo].cantidad += v.Cantidad || 0;
+      recibosPorPeriodo[label][v.NumeroRecibo].ventasNetas += v.VentasNetas || 0;
+    }
   });
 
   // Luego agregar los totales al resultado final
