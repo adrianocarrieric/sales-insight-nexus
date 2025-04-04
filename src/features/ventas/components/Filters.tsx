@@ -33,12 +33,12 @@ const Filters: React.FC<FiltersProps> = ({
   const toggleMetrica = (key: string) => {
     setMetricasVisibles(prev => {
       const isSelected = prev.includes(key);
-      const result = isSelected 
-        ? prev.filter(k => k !== key)
-        : [...prev, key];
-      
-      // Mantener al menos una métrica seleccionada
-      return result.length > 0 ? result : prev;
+      if (isSelected) {
+        // Solo permitir deseleccionar si quedaría al menos una métrica visible
+        return prev.length > 1 ? prev.filter(k => k !== key) : prev;
+      } else {
+        return [...prev, key];
+      }
     });
   };
 
