@@ -44,10 +44,6 @@ const INFLACION_MENSUAL: Record<string, number> = {
   "2026-01": 1.5, "2026-02": 1.5, "2026-03": 1.5
 };
 
-// Constantes para los cálculos de proyección
-const CRECIMIENTO_POR_DEFECTO = 1.1;
-const CRECIMIENTO_MAXIMO = 1.3;
-
 /**
  * Ajusta un valor por la inflación acumulada entre dos fechas
  */
@@ -210,8 +206,8 @@ function calcularValorBase(datosPorClave: Record<string | number, Record<number,
   const anterior2 = datosPorClave[periodo]?.[año - 2];
 
   if (base != null) {
-    const tasa = (tendencia[periodo as string]) || CRECIMIENTO_POR_DEFECTO;
-    const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : tasa;
+    const tasa = (tendencia[periodo as string]) || 1.1;
+    const ratio = anterior2 != null ? Math.min(base / anterior2, 1.3) : tasa;
     return base * ratio;
   }
 
@@ -242,11 +238,11 @@ function generateChartData(
   let yearChangeLines = [];
 
   const individualMode = !Array.isArray(categoriaParam);
+
   const { startDate, endDate } = dateRange[0];
   const start = dayjs(startDate);
   const end = dayjs(endDate);
 
-  // Generar etiquetas de tiempo para el rango de fechas
   const baseTimeLabels = agrupacion === "Mensual"
     ? generarMesesGlobales(start, end)
     : agrupacion === "Semanal"
@@ -256,7 +252,6 @@ function generateChartData(
   let endExtendido = end;
   let timeLabels = baseTimeLabels;
 
-  // Extender el rango si se incluye proyección
   if (metricasVisibles.includes("proyeccion")) {
     endExtendido = agrupacion === "Semanal"
       ? end.add(52, "week")
@@ -280,14 +275,15 @@ function generateChartData(
   });
 
   // Arreglo para almacenar los datasets del gráfico
+
   let datasets = [];
 
-  if (individualMode) {
-    // Filtrar ventas según categoría y producto seleccionados
+  if (!Array.isArray(categoriaParam)) {
     const ventasFiltradas = ventasEnRango.filter(v =>
       (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
       (productoParam === "Todos los productos" || v.Articulo === productoParam)
     );
+
 
     // Verificar recibos únicos después del filtrado
     const recibosUnicos = new Set<string>();
@@ -309,6 +305,13 @@ function generateChartData(
 
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
+    const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
+
+    METRICAS.forEach((met) => {
+      if (met.key === "proyeccion") return;
+
+      const metricaKey = met.key === "articulos" ? "articulos" : met.key;
+
       const data = timeLabels.map(lbl => {
         const valor = agrupadas[lbl]?.[met.key] || 0;
         return valor;
@@ -317,11 +320,14 @@ function generateChartData(
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
+
         backgroundColor: coloresFijos[met.key as keyof typeof coloresFijos] || obtenerColor(0),
+
+        backgroundColor: obtenerColor(0),
+
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
-    });
 
     // Agregar líneas verticales para cambios de año
     yearChangeLines = [];
@@ -430,6 +436,11 @@ function generateChartData(
       }
     }
   };
+
+  }
+
+  return { chartData: { labels: timeLabels, datasets }, chartOptions: {} };
+
 }
 
 export {
