@@ -69,9 +69,6 @@ function ajustarPorInflacion(hasta: dayjs.Dayjs, valor: number, desde = dayjs("2
   return valor * factor;
 }
 
-/**
- * Agrupa ventas por período de tiempo (día, semana, mes)
- */
 function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> {
   const result: Record<string, { articulos: number, recibos: Set<string>, ventasNetas: number, recibosCount: number }> = {};
 
@@ -80,13 +77,11 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
   let recibosInvalidos = 0;
   let ventasSinFecha = 0;
 
-
   ventasFiltradas.forEach(v => {
     if (!v.Fecha) {
       ventasSinFecha++;
       return; // Omitir ventas sin fecha
     }
-
 
     let label: string;
     if (agrupacion === "Mensual") {
@@ -112,7 +107,6 @@ function agruparVentasPorTiempo(ventasFiltradas: Venta[], agrupacion: string): R
       recibosInvalidos++;
     }
   });
-
 
   // Calcular recibosCount a partir del Set de recibos
   Object.keys(result).forEach(lbl => {
@@ -224,9 +218,6 @@ function calcularValorBase(datosPorClave: Record<string | number, Record<number,
   return null;
 }
 
-/**
- * Genera datos para el gráfico de acuerdo a los filtros
- */
 function generateChartData(
   ventas: Venta[],
   categoriaParam: string,
@@ -239,7 +230,6 @@ function generateChartData(
 ) {
   if (!ventas || ventas.length === 0)
     return { chartData: { labels: [], datasets: [] }, chartOptions: {} };
-
 
   // Verificar recibos únicos en todo el conjunto de datos
   const todosRecibos = new Set<string>();
@@ -281,21 +271,12 @@ function generateChartData(
         : generarDiasGlobales(start, endExtendido);
   }
 
-  // Filtrar ventas históricas y en rango
   const ventasHistoricas = ventas.filter(v => v.Fecha && dayjs(v.Fecha).isValid());
 
   const ventasEnRango = ventasHistoricas.filter(v => {
     if (!v.Fecha) return false;
     const fv = dayjs(v.Fecha);
     return fv.isAfter(start.subtract(1, 'day')) && fv.isBefore(endExtendido.add(1, 'day'));
-  });
-
-  // Contar recibos únicos en el rango
-  const recibosEnRango = new Set<string>();
-  ventasEnRango.forEach(v => {
-    if (v.NumeroRecibo && v.NumeroRecibo.trim() !== '' && v.TipoRecibo !== "Reembolso") {
-      recibosEnRango.add(v.NumeroRecibo);
-    }
   });
 
   // Arreglo para almacenar los datasets del gráfico
@@ -319,15 +300,6 @@ function generateChartData(
     // Agrupar datos para mostrar en el gráfico
     const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
 
-    // Agrupar todo el historial para proyecciones
-    const agrupadasHistorialCompleto = agruparVentasPorTiempo(
-      ventasHistoricas.filter(v =>
-        (categoriaParam === "Todas las Categorías" || v.Categoria === categoriaParam) &&
-        (productoParam === "Todos los productos" || v.Articulo === productoParam)
-      ),
-      agrupacion
-    );
-
     // Colores fijos para las métricas principales
     const coloresFijos = {
       articulos: 'rgba(75, 192, 192, 0.5)',      // celeste
@@ -337,109 +309,19 @@ function generateChartData(
 
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
-      if (met.key === "proyeccion") return;
-
-      // Ajuste para asegurar compatibilidad con las claves para articulos
-      const metricaKey = met.key === "articulos" ? "articulos" : met.key;
-
       const data = timeLabels.map(lbl => {
-        const valor = agrupadas[lbl]?.[metricaKey] || 0;
+        const valor = agrupadas[lbl]?.[met.key] || 0;
         return valor;
       });
 
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
-        backgroundColor: coloresFijos[metricaKey as keyof typeof coloresFijos] || obtenerColor(0),
+        backgroundColor: coloresFijos[met.key as keyof typeof coloresFijos] || obtenerColor(0),
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
     });
-
-    // Agregar proyecciones si están habilitadas
-    if (metricasVisibles.includes("proyeccion")) {
-      const clavesProyectadas = metricasVisibles.filter(m => m !== "proyeccion");
-
-      clavesProyectadas.forEach((clave) => {
-        const datosPorClave = generarProyeccionBase(agrupadasHistorialCompleto, clave, agrupacion);
-        const tendencia = tendenciaPorSemana(datosPorClave);
-
-        const generarGlobales = agrupacion === "Mensual" ? generarMesesGlobales : agrupacion === "Semanal" ? generarSemanasGlobales : generarDiasGlobales;
-        const parsearFecha = agrupacion === "Semanal" ? parseIsoWeekLabel : (lbl: string) => dayjs(lbl);
-
-        const allLabels = generarGlobales(start, endExtendido);
-        const proyeccionData = allLabels.map(label => {
-          const date = parsearFecha(label);
-          const periodo = agrupacion === "Semanal"
-            ? date.isoWeek()
-            : agrupacion === "Mensual"
-              ? date.month() + 1
-              : date.dayOfYear();
-          const año = date.year();
-
-          let valor: number | null = null;
-
-          if (clave === "ventasNetas") {
-            const base = datosPorClave[periodo]?.[año - 1];
-            const anterior2 = datosPorClave[periodo]?.[año - 2];
-
-            if (base != null) {
-              const ratio = anterior2 != null ? Math.min(base / anterior2, CRECIMIENTO_MAXIMO) : CRECIMIENTO_POR_DEFECTO;
-              valor = base * ratio;
-              const desde = dayjs().year(año - 1).month(date.month());
-              valor = ajustarPorInflacion(date, valor, desde);
-            }
-          } else {
-            valor = calcularValorBase(datosPorClave, periodo, año, tendencia);
-          }
-
-          if (valor != null) {
-            valor = Math.round(valor);
-          }
-          return valor;
-        });
-
-        // Suavizar proyección con media móvil
-        const proyeccionSuavizada = calcularMediaMovil(proyeccionData, 3).map(v => v != null ? Math.round(v) : null);
-
-        // Encontrar el punto donde comienza la proyección
-        const ultimoLabelReal = baseTimeLabels[baseTimeLabels.length - 1];
-        const inicioProyeccionIndex = allLabels.findIndex(lbl => lbl === ultimoLabelReal) + 1;
-
-        // Crear dataset para barras proyectadas (solo mostrar en el futuro)
-        const barrasProyectadas = allLabels.map((lbl, i) => {
-          return i < inicioProyeccionIndex ? null : proyeccionSuavizada[i];
-        });
-
-        // Agregar dataset para barras proyectadas
-        datasets.push({
-          label: `🟪 Proyección Barras - ${clave}`,
-          data: barrasProyectadas,
-          backgroundColor: "rgba(180, 180, 180, 0.25)",
-          borderSkipped: false,
-          type: "bar",
-          barPercentage: 0.8,
-          categoryPercentage: 0.9,
-          stack: undefined
-        });
-
-        // Agregar dataset para línea de proyección
-        datasets.push({
-          label: `📈 Proyección Estacional - ${clave}`,
-          data: proyeccionSuavizada,
-          borderColor: "rgb(124, 124, 124)",
-          borderWidth: 2,
-          backgroundColor: "transparent",
-          borderDash: [5, 5],
-          type: "line",
-          tension: 0.3,
-          pointRadius: 0
-        });
-
-        // Actualizar etiquetas de tiempo para incluir proyección
-        timeLabels = Array.from(new Set([...timeLabels, ...allLabels]));
-      });
-    }
 
     // Agregar líneas verticales para cambios de año
     yearChangeLines = [];
@@ -498,13 +380,11 @@ function generateChartData(
             label: (context: any) => {
               const label = context.dataset.label || '';
               const value = context.raw;
-
-              const esVenta = label.toLowerCase().includes("ventasnetas");
-
-              if (value == null) return null;
-              return esVenta
-                ? `${label}: $${value.toLocaleString("es-AR")}`
-                : `${label}: ${value.toLocaleString("es-AR")}`;
+              const esVenta = label.toLowerCase().includes("ventas");
+              return value == null ? null :
+                esVenta
+                  ? `${label}: $${value.toLocaleString("es-AR")}`
+                  : `${label}: ${value.toLocaleString("es-AR")}`;
             }
           }
         }
@@ -517,9 +397,7 @@ function generateChartData(
             autoSkip: false,
             maxRotation: 45,
             minRotation: 45,
-            font: {
-              size: 9
-            },
+            font: { size: 9 },
             callback: function (value: any, index: number, values: any[]) {
               const label = this.getLabelForValue(value);
               let date;
@@ -531,7 +409,6 @@ function generateChartData(
 
               if (!date.isValid()) return "";
 
-              // Mostrar solo si es el primer label o si cambió el mes
               if (index === 0) {
                 return date.format("MMM").toUpperCase();
               }
@@ -545,7 +422,6 @@ function generateChartData(
               }
 
               const mismoMes = prevDate.isValid() && prevDate.month() === date.month() && prevDate.year() === date.year();
-
               return mismoMes ? "" : date.format("MMM").toUpperCase();
             }
           }
@@ -557,6 +433,7 @@ function generateChartData(
 }
 
 export {
+  ajustarPorInflacion,
   obtenerColor,
   agruparVentasPorTiempo,
   calcularMediaMovil,
