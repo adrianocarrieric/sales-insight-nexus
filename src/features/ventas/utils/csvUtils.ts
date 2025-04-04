@@ -12,7 +12,6 @@ export const parseCSVData = (csvText: string): Venta[] => {
   if (csvText.trim().startsWith('<!DOCTYPE html>') || 
       csvText.trim().startsWith('<html') || 
       csvText.includes('<head>')) {
-    //console.warn("El archivo cargado parece ser HTML, no un CSV válido");
     return [];
   }
 
@@ -28,7 +27,6 @@ export const parseCSVData = (csvText: string): Venta[] => {
       delimitador = "\t";
     }
 
-    //console.log(`🔄 Parseando CSV con delimitador: "${delimitador}"`);
 
     const parsed = Papa.parse(csvText, {
       header: true, // Usar los encabezados del CSV
@@ -39,14 +37,7 @@ export const parseCSVData = (csvText: string): Venta[] => {
 
     const data = parsed.data;
     if (!data || data.length === 0) {
-        //console.error("El archivo CSV está vacío o con errores:", parsed.errors);
         return [];
-    }
-
-    // Mostrar los encabezados detectados para diagnóstico
-    if (data.length > 0) {
-      const primeraFila = data[0];
-      //console.log("📑 Encabezados detectados:", Object.keys(primeraFila));
     }
 
     // Convertir los datos a nuestro formato
@@ -64,7 +55,7 @@ export const parseCSVData = (csvText: string): Venta[] => {
       ], false);
 
       if (!fecha.isValid()) {
-        //console.warn(`⚠️ Fecha inválida detectada: "${row.Fecha}"`);
+        return null;
       }
 
       const fechaFinal = fecha.isValid() ? fecha.toDate() : null;
@@ -97,7 +88,6 @@ export const parseCSVData = (csvText: string): Venta[] => {
 
         if (claveNormalizada) {
           numeroRecibo = row[claveNormalizada]?.trim() || "";
-          //console.log(`🔍 Encontrada clave alternativa para recibo: "${claveNormalizada}"`);
         }
       }
 
@@ -118,12 +108,8 @@ export const parseCSVData = (csvText: string): Venta[] => {
       };
     });
 
-    // Resumen final
-    //console.log(`📊 CSV parseado: ${ventasParsed.length} filas, ${ventasParsed.filter(v => v.Fecha).length} con fecha válida, ${ventasParsed.filter(v => v.NumeroRecibo).length} con recibo`);
-
     return ventasParsed;
   } catch (error) {
-    //console.error("Error al parsear CSV:", error);
     return [];
   }
 };
