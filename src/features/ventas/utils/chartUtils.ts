@@ -305,9 +305,6 @@ function generateChartData(
 
     // Crear datasets para cada métrica seleccionada
     METRICAS.forEach((met) => {
-    const agrupadas = agruparVentasPorTiempo(ventasFiltradas, agrupacion);
-
-    METRICAS.forEach((met) => {
       if (met.key === "proyeccion") return;
 
       const metricaKey = met.key === "articulos" ? "articulos" : met.key;
@@ -320,14 +317,11 @@ function generateChartData(
       datasets.push({
         label: `${met.label} - ${categoriaParam}`,
         data,
-
         backgroundColor: coloresFijos[met.key as keyof typeof coloresFijos] || obtenerColor(0),
-
-        backgroundColor: obtenerColor(0),
-
         hidden: !metricasVisibles.includes(met.key),
         stack: met.key
       });
+    });
 
     // Agregar líneas verticales para cambios de año
     yearChangeLines = [];
@@ -436,10 +430,6 @@ function generateChartData(
       }
     }
   };
-
-  }
-
-  return { chartData: { labels: timeLabels, datasets }, chartOptions: {} };
 
 }
 
